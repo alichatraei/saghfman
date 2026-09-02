@@ -1,0 +1,443 @@
+// «سقف من» — Prisma schema
+// Privacy note: User.phone (owner mobile) is NEVER selected by public
+// property queries. See src/modules/properties/property.serializer.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  EDITOR
+  MANAGER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BLOCKED
+}
+
+enum PropertyStatus {
+  DRAFT
+  PENDING
+  PUBLISHED
+  REJECTED
+  EXPIRED
+  INACTIVE
+}
+
+enum TransactionKind {
+  SALE
+  RENT
+  FULL_MORTGAGE
+  MORTGAGE_RENT
+  PRESALE
+  EXCHANGE
+}
+
+enum DeedType {
+  SIX_DANG
+  ENDOWMENT
+  COOPERATIVE
+  AGREEMENT
+  OTHER
+}
+
+enum NotificationType {
+  PROPERTY_APPROVED
+  PROPERTY_REJECTED
+  PROPERTY_EXPIRED
+  NEW_MATCH
+  SYSTEM
+}
+
+enum HeatingType {
+  PACKAGE
+  HEATER
+  CENTRAL
+  FLOOR_HEATING
+  NONE
+}
+
+enum CoolingType {
+  SPLIT
+  EVAPORATIVE
+  CENTRAL
+  NONE
+}
+
+enum CabinetType {
+  MDF
+  METAL
+  WOOD
+  OTHER
+}
+
+enum FloorMaterial {
+  CARPET
+  CERAMIC
+  PARQUET
+  STONE
+  OTHER
+}
+
+enum WallMaterial {
+  WALLPAPER
+  PAINT
+  OTHER
+}
+
+enum OtpPurpose {
+  LOGIN
+  PHONE_CHANGE
+}
+
+model User {
+  id        String     @id @default(cuid())
+  /// Owner mobile. Private. Never exposed through public DTOs.
+  phone     String     @unique
+  fullName  String?
+  email     String?    @unique
+  avatarUrl String?
+  role      UserRole   @default(USER)
+  status    UserStatus @default(ACTIVE)
+  city      String?
+
+  preferredTransactionId String?
+  preferredTransaction   TransactionType? @relation(fields: [preferredTransactionId], references: [id], onDelete: SetNull)
+  preferredAreas         String[]         @default([])
+
+  notifyBySms           Boolean @default(true)
+  notifyByEmail         Boolean @default(false)
+  notifyOnMatch         Boolean @default(true)
+  hidePhoneFromListings Boolean @default(true)
+
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  properties    Property[]
+  favorites     Favorite[]
+  refreshTokens RefreshToken[]
+  notifications Notification[]
+  otpCodes      OtpCode[]
+  statusChanges PropertyStatusHistory[] @relation("StatusChangedBy")
+  auditLogs     AdminAuditLog[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OtpCode {
+  id         String     @id @default(cuid())
+  phone      String
+  codeHash   String
+  purpose    OtpPurpose @default(LOGIN)
+  attempts   Int        @default(0)
+  consumedAt DateTime?
+  expiresAt  DateTime
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime   @default(now())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([phone, createdAt])
+  @@index([expiresAt])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model PropertyType {
+  id       String  @id @default(cuid())
+  slug     String  @unique
+  title    String
+  icon     String?
+  landOnly Boolean @default(false)
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+
+  properties Property[]
+}
+
+model TransactionType {
+  id       String          @id @default(cuid())
+  slug     String          @unique
+  title    String
+  kind     TransactionKind
+  order    Int             @default(0)
+  isActive Boolean         @default(true)
+
+  properties     Property[]
+  preferredUsers User[]
+}
+
+model Neighborhood {
+  id       String  @id @default(cuid())
+  slug     String  @unique
+  title    String
+  city     String  @default("تهران")
+  province String  @default("تهران")
+  lat      Float?
+  lng      Float?
+  isActive Boolean @default(true)
+
+  properties Property[]
+
+  @@index([city])
+}
+
+model Amenity {
+  id       String  @id @default(cuid())
+  slug     String  @unique
+  title    String
+  icon     String?
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+
+  properties PropertyAmenity[]
+}
+
+model Property {
+  id          String @id @default(cuid())
+  slug        String @unique
+  code        String @unique
+  title       String
+  description String @db.Text
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  propertyTypeId String
+  propertyType   PropertyType @relation(fields: [propertyTypeId], references: [id])
+
+  transactionTypeId String
+  transactionType   TransactionType @relation(fields: [transactionTypeId], references: [id])
+
+  neighborhoodId String
+  neighborhood   Neighborhood @relation(fields: [neighborhoodId], references: [id])
+
+  /// Full street address. PRIVATE — admin-only field.
+  address           String
+  /// Optional public-safe address line (e.g. "تهران، شهرک غرب").
+  displayAddress    String?
+  showExactLocation Boolean @default(false)
+  latitude          Float?
+  longitude         Float?
+
+  area             Int
+  /// متراژ سالن / پذیرایی
+  hallArea         Int?
+  /// متراژ زمین — فقط برای ویلا، خانه، زمین و باغ پر می‌شود.
+  landArea         Int?
+  rooms            Int       @default(0)
+  bathrooms        Int?
+  floor            Int?
+  totalFloors      Int?
+  constructionYear Int?
+  parkingCount     Int       @default(0)
+  hasElevator      Boolean   @default(false)
+  hasStorage       Boolean   @default(false)
+  hasBalcony       Boolean   @default(false)
+  deedType         DeedType?
+
+  heating       HeatingType?
+  cooling       CoolingType?
+  cabinet       CabinetType?
+  floorMaterial FloorMaterial?
+  wallMaterial  WallMaterial?
+
+  /// Sale price in Toman. BigInt to safely store multi-billion values.
+  price         BigInt?
+  pricePerMeter BigInt?
+  deposit       BigInt?
+  monthlyRent   BigInt?
+  isNegotiable  Boolean @default(false)
+  exchangeable  Boolean @default(false)
+
+  status          PropertyStatus @default(DRAFT)
+  rejectionReason String?
+  isFeatured      Boolean        @default(false)
+  viewCount       Int            @default(0)
+
+  publishedAt DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  images        PropertyImage[]
+  amenities     PropertyAmenity[]
+  favorites     Favorite[]
+  views         PropertyView[]
+  statusHistory PropertyStatusHistory[]
+
+  @@index([status, publishedAt])
+  @@index([ownerId, status])
+  @@index([neighborhoodId])
+  @@index([propertyTypeId])
+  @@index([transactionTypeId])
+  @@index([price])
+  @@index([area])
+  @@index([isFeatured, status])
+}
+
+model PropertyImage {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  url        String
+  thumbUrl   String?
+  width      Int?
+  height     Int?
+  sizeBytes  Int?
+  mimeType   String?
+  alt        String?
+  isCover    Boolean  @default(false)
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([propertyId, order])
+}
+
+model PropertyAmenity {
+  propertyId String
+  amenityId  String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  amenity    Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([propertyId, amenityId])
+  @@index([amenityId])
+}
+
+model Favorite {
+  id         String   @id @default(cuid())
+  userId     String
+  propertyId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, propertyId])
+  @@index([userId, createdAt])
+}
+
+model PropertyView {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  /// Hashed visitor fingerprint — no raw IP is stored.
+  visitorKey String
+  createdAt  DateTime @default(now())
+
+  @@index([propertyId, createdAt])
+  @@index([visitorKey, propertyId])
+}
+
+model PropertyStatusHistory {
+  id          String          @id @default(cuid())
+  propertyId  String
+  property    Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  fromStatus  PropertyStatus?
+  toStatus    PropertyStatus
+  reason      String?
+  changedById String?
+  changedBy   User?           @relation("StatusChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime        @default(now())
+
+  @@index([propertyId, createdAt])
+}
+
+model CompanySetting {
+  id             String   @id @default("default")
+  companyName    String   @default("سقف من")
+  tagline        String?  @default("مشاور و مجری املاک")
+  primaryPhone   String
+  secondaryPhone String?
+  whatsapp       String?
+  /// شماره‌ای که فقط روی پیام‌رسان‌ها پاسخ داده می‌شود.
+  messengerPhone String?
+  email          String?
+  address        String?
+  workingHours   String?
+  instagram      String?
+  telegram       String?
+  whatsappLink   String?
+  rubika         String?
+  bale           String?
+  eitaa          String?
+  updatedAt      DateTime @updatedAt
+}
+
+model Banner {
+  id        String    @id @default(cuid())
+  title     String
+  /// متن پیام بنر؛ اگر خالی باشد فقط عنوان نمایش داده می‌شود.
+  message   String?
+  /// info | success | warning | promo — رنگ و آیکون بنر را تعیین می‌کند.
+  variant   String    @default("info")
+  ctaLabel  String?
+  linkUrl   String?
+  imageUrl  String?
+  position  String    @default("home-top")
+  isActive  Boolean   @default(true)
+  /// امکان بستن بنر توسط بازدیدکننده.
+  dismissible Boolean @default(true)
+  order     Int       @default(0)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([position, isActive, startsAt, endsAt])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  linkUrl   String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, readAt])
+}
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}

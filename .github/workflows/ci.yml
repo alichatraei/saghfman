@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # پکیج‌های مشترک باید قبل از هر چیز بیلد شوند؛ بقیه به dist آن‌ها وابسته‌اند.
+      - name: Build shared packages
+        run: |
+          npm run build -w @saghf/types
+          npm run build -w @saghf/config
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema apps/api/prisma/schema.prisma
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck (web)
+        run: npm run typecheck -w @saghf/web
+
+      # شامل تست‌های رگرسیون حریم خصوصی مالک است.
+      - name: Unit tests (API)
+        run: npm run test -w @saghf/api
+
+      - name: Build API
+        run: npm run build -w @saghf/api
+
+      - name: Build web
+        run: npm run build -w @saghf/web
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_PUBLIC_API_URL: https://example.com/api
+          NEXT_PUBLIC_SITE_URL: https://example.com
+          NEXT_PUBLIC_SITE_NAME: سقف من

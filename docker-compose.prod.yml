@@ -1,0 +1,96 @@
+# استقرار production «سقف من».
+# فقط Nginx به بیرون پورت باز می‌کند؛ db/api/web روی شبکه داخلی می‌مانند.
+#
+# اجرا:  docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: saghf-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: Asia/Tehran
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: saghf-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      TZ: Asia/Tehran
+      API_PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
+    volumes:
+      - uploads:/repo/uploads
+    networks: [internal]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Next مقادیر NEXT_PUBLIC_ را هنگام بیلد داخل باندل می‌نویسد،
+        # پس باید build-arg باشند نه فقط متغیر محیطیِ زمان اجرا.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
+        NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME}
+    container_name: saghf-web
+    restart: unless-stopped
+    depends_on: [api]
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      TZ: Asia/Tehran
+    networks: [internal]
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: saghf-nginx
+    restart: unless-stopped
+    depends_on: [web, api]
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      TZ: Asia/Tehran
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certbot/www:/var/www/certbot:ro
+      - ./nginx/certbot/conf:/etc/letsencrypt:ro
+    networks: [internal]
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: saghf-certbot
+    restart: unless-stopped
+    volumes:
+      - ./nginx/certbot/www:/var/www/certbot
+      - ./nginx/certbot/conf:/etc/letsencrypt
+    # هر ۱۲ ساعت تمدید گواهی را امتحان می‌کند.
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done;'
+    networks: [internal]
+
+volumes:
+  db-data:
+  uploads:
+
+networks:
+  internal:
+    driver: bridge

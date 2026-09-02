@@ -1,0 +1,34 @@
+{
+  "name": "saghf-man",
+  "private": true,
+  "version": "1.0.0",
+  "description": "«سقف من» — Persian RTL real-estate classifieds platform (Next.js + NestJS + PostgreSQL)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev -w @saghf/api\" \"npm run dev -w @saghf/web\"",
+    "build": "npm run build -w @saghf/types && npm run build -w @saghf/config && npm run db:generate && npm run build -w @saghf/api && npm run build -w @saghf/web",
+    "start": "concurrently -n api,web -c cyan,magenta \"npm run start:prod -w @saghf/api\" \"npm run start -w @saghf/web\"",
+    "db:generate": "npm run prisma:generate -w @saghf/api",
+    "db:migrate": "npm run prisma:migrate -w @saghf/api",
+    "db:deploy": "npm run prisma:deploy -w @saghf/api",
+    "db:seed": "npm run prisma:seed -w @saghf/api",
+    "lint": "eslint \"apps/api/src/**/*.ts\" \"apps/web/{app,components,lib}/**/*.{ts,tsx}\"",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md,prisma}\"",
+    "test": "npm run test -w @saghf/api"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.16.0",
+    "@typescript-eslint/parser": "^7.16.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=20.11.0"
+  }
+}

@@ -1,0 +1,15 @@
+node_modules
+dist
+.next
+out
+.env
+.env.local
+*.log
+uploads/
+coverage/
+.DS_Store
+nginx/certbot/conf/
+nginx/certbot/www/
+logs/
+docker-compose.override.yml
+nginx/conf.d/*.local.conf

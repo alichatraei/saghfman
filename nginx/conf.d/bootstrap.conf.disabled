@@ -1,0 +1,24 @@
+# کانفیگ موقت برای گرفتن اولین گواهی SSL.
+# تا وقتی گواهی وجود ندارد، saghf.conf بالا نمی‌آید، پس:
+#   mv nginx/conf.d/saghf.conf nginx/conf.d/saghf.conf.disabled
+#   mv nginx/conf.d/bootstrap.conf.disabled nginx/conf.d/bootstrap.conf
+# و بعد از گرفتن گواهی، برعکسش کنید.
+
+server {
+    listen 80;
+    server_name example.com www.example.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location /api/ {
+        proxy_pass       http://api:4000;
+        proxy_set_header Host $host;
+    }
+
+    location / {
+        proxy_pass       http://web:3000;
+        proxy_set_header Host $host;
+    }
+}

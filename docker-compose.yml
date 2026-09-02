@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: saghf-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-saghf}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-saghf_password}
+      POSTGRES_DB: ${POSTGRES_DB:-saghf_man}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-saghf}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: saghf-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-saghf}:${POSTGRES_PASSWORD:-saghf_password}@db:5432/${POSTGRES_DB:-saghf_man}?schema=public
+      API_PORT: 4000
+      NODE_ENV: production
+    volumes:
+      - uploads:/repo/uploads
+    ports:
+      - '4000:4000'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: saghf-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    ports:
+      - '3000:3000'
+
+volumes:
+  db-data:
+  uploads:
