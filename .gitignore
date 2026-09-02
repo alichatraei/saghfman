@@ -5,11 +5,11 @@ out
 .env
 .env.local
 *.log
-uploads/
+/uploads/
+/logs/
 coverage/
 .DS_Store
 nginx/certbot/conf/
 nginx/certbot/www/
-logs/
 docker-compose.override.yml
 nginx/conf.d/*.local.conf

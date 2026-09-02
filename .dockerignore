@@ -6,11 +6,11 @@ dist
 **/dist
 .git
 .env
-uploads
+/uploads/
+/logs/
 coverage
 .github
 nginx
-logs
 *.md
 !README.md
 .env.production.example
